@@ -16,62 +16,59 @@ namespace Todos
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        private async Task GetAll(HttpContext context)
+        private async Task GetAllAsync(HttpContext context)
         {
-            var todos = await GetAll();
-            context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.Body, todos, _options);
+            var todos = await GetAllAsync();
+
+            await context.Response.WriteAsJsonAsync(todos, _options);
         }
 
-        private async Task Get(HttpContext context)
+        private async Task GetAsync(HttpContext context)
         {
-            var id = (string)context.Request.RouteValues["id"];
-            if (id == null || !long.TryParse(id, out var todoId))
+            if (!context.Request.RouteValues.TryGet("id", out int id))
             {
-                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                context.Response.StatusCode = 400;
                 return;
             }
 
-            var todo = await Get(todoId);
+            var todo = await GetAsync(id);
             if (todo == null)
             {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                context.Response.StatusCode = 404;
                 return;
             }
 
-            context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.Body, todo, _options);
+            await context.Response.WriteAsJsonAsync(todo, _options);
         }
 
-        private async Task Post(HttpContext context)
+        private async Task PostAsync(HttpContext context)
         {
-            var todo = await JsonSerializer.DeserializeAsync<Todo>(context.Request.Body, _options);
+            var todo = await context.Request.ReadFromJsonAsync<Todo>(_options);
 
-            await Post(todo);
+            await PostAsync(todo);
         }
 
-        private async Task Delete(HttpContext context)
+        private async Task DeleteAsync(HttpContext context)
         {
-            var id = (string)context.Request.RouteValues["id"];
-            if (id == null || !long.TryParse(id, out var todoId))
+            if (!context.Request.RouteValues.TryGet("id", out int id))
             {
-                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                context.Response.StatusCode = 400;
                 return;
             }
 
-            if (!await Delete(todoId))
+            if (!await DeleteAsync(id))
             {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                context.Response.StatusCode = 404;
                 return;
             }
         }
 
         public static void MapRoutes(IEndpointRouteBuilder endpoints)
         {
-            endpoints.MapGet("/api/todos", WithServices(api => api.GetAll));
-            endpoints.MapGet("/api/todos/{id}", WithServices(api => api.Get));
-            endpoints.MapPost("/api/todos", WithServices(api => api.Post));
-            endpoints.MapDelete("/api/todos/{id}", WithServices(api => api.Delete));
+            endpoints.MapGet("/api/todos", WithServices(api => api.GetAllAsync));
+            endpoints.MapGet("/api/todos/{id}", WithServices(api => api.GetAsync));
+            endpoints.MapPost("/api/todos", WithServices(api => api.PostAsync));
+            endpoints.MapDelete("/api/todos/{id}", WithServices(api => api.DeleteAsync));
         }
 
         private static RequestDelegate WithServices(Func<TodoApi, RequestDelegate> handler)

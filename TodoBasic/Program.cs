@@ -1,94 +1,123 @@
-using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace Todos
+var app = WebApplication.Create(args);
+
+app.MapGet("/api/todos", GetTodos);
+app.MapGet("/api/todos/{id}", GetTodo);
+app.MapPost("/api/todos", CreateTodo);
+app.MapPost("/api/todos/{id}", UpdateCompleted);
+app.MapDelete("/api/todos/{id}", DeleteTodo);
+
+await app.RunAsync();
+
+async Task GetTodos(HttpContext context)
 {
-    class Program
+    using var db = new TodoDbContext();
+    var todos = await db.Todos.ToListAsync();
+
+    await context.Response.WriteAsJsonAsync(todos);
+}
+
+async Task GetTodo(HttpContext context)
+{
+    if (!context.Request.RouteValues.TryGet("id", out int id))
     {
-        private static readonly JsonSerializerOptions _options = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
+        context.Response.StatusCode = 400;
+        return;
+    }
 
-        static async Task Main(string[] args)
-        {
-            var app = WebApplication.Create(args);
+    using var db = new TodoDbContext();
+    var todo = await db.Todos.FindAsync(id);
+    if (todo is null)
+    {
+        context.Response.StatusCode = 404;
+        return;
+    }
 
-            app.MapGet("/api/todos", GetAll);
-            app.MapGet("/api/todos/{id}", Get);
-            app.MapPost("/api/todos", Post);
-            app.MapDelete("/api/todos/{id}", Delete);
+    await context.Response.WriteAsJsonAsync(todo);
+}
 
-            await app.RunAsync();
-        }
+async Task CreateTodo(HttpContext context)
+{
+    var todo = await context.Request.ReadFromJsonAsync<Todo>();
 
-        static async Task GetAll(HttpContext context)
-        {
-            using var db = new TodoDbContext();
-            var todos = await db.Todos.ToListAsync();
+    using var db = new TodoDbContext();
+    await db.Todos.AddAsync(todo);
+    await db.SaveChangesAsync();
 
-            context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.Body, todos, _options);
-        }
+    context.Response.StatusCode = 204;
+}
 
-        static async Task Get(HttpContext context)
-        {
-            var id = (string)context.Request.RouteValues["id"];
-            if (id == null || !long.TryParse(id, out var todoId))
-            {
-                context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                return;
-            }
+async Task UpdateCompleted(HttpContext context)
+{
+    if (!context.Request.RouteValues.TryGet("id", out int id))
+    {
+        context.Response.StatusCode = 400;
+        return;
+    }
 
-            using var db = new TodoDbContext();
-            var todo = await db.Todos.FindAsync(todoId);
-            if (todo == null)
-            {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return;
-            }
+    using var db = new TodoDbContext();
+    var todo = await db.Todos.FindAsync(id);
 
-            context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.Body, todo, _options);
-        }
+    if (todo is null)
+    {
+        context.Response.StatusCode = 404;
+        return;
+    }
 
-        static async Task Post(HttpContext context)
-        {
-            var todo = await JsonSerializer.DeserializeAsync<Todo>(context.Request.Body, _options);
+    var inputTodo = await context.Request.ReadFromJsonAsync<Todo>();
+    todo.IsComplete = inputTodo.IsComplete;
 
-            using var db = new TodoDbContext();
-            db.Todos.Add(todo);
-            await db.SaveChangesAsync();
-            
-            context.Response.StatusCode = StatusCodes.Status204NoContent;
-        }
+    await db.SaveChangesAsync();
 
-        static async Task Delete(HttpContext context)
-        {
-            var id = (string)context.Request.RouteValues["id"];
-            if (id == null || !long.TryParse(id, out var todoId))
-            {
-                context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                return;
-            }
+    context.Response.StatusCode = 204;
+}
 
-            using var db = new TodoDbContext();
-            var todo = await db.Todos.FindAsync(todoId);
-            if (todo == null)
-            {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return;
-            }
+async Task DeleteTodo(HttpContext context)
+{
+    if (!context.Request.RouteValues.TryGet("id", out int id))
+    {
+        context.Response.StatusCode = 400;
+        return;
+    }
 
-            db.Todos.Remove(todo);
-            await db.SaveChangesAsync();
-            
-            context.Response.StatusCode = StatusCodes.Status204NoContent;
-        }
+    using var db = new TodoDbContext();
+    var todo = await db.Todos.FindAsync(id);
+    if (todo is null)
+    {
+        context.Response.StatusCode = 404;
+        return;
+    }
+
+    db.Todos.Remove(todo);
+    await db.SaveChangesAsync();
+
+    context.Response.StatusCode = 204;
+}
+
+public class Todo
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; }
+
+    [JsonPropertyName("isComplete")]
+    public bool IsComplete { get; set; }
+}
+
+public class TodoDbContext : DbContext
+{
+    public DbSet<Todo> Todos { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.UseInMemoryDatabase("Todos");
     }
 }

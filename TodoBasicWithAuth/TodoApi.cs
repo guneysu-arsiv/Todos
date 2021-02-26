@@ -13,25 +13,18 @@ namespace Todos
     {
         private readonly JsonSerializerOptions _options = new JsonSerializerOptions
         {
-            PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+             PropertyNameCaseInsensitive = true,
+             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        private readonly TodoDbContext _db;
-
-        public TodoApi(TodoDbContext db)
+        public async Task GetAllAsync(TodoDbContext db, HttpContext context)
         {
-            _db = db;
-        }
-
-        public async Task GetAllAsync(HttpContext context)
-        {
-            var todos = await _db.Todos.ToListAsync();
+            var todos = await db.Todos.ToListAsync();
 
             await context.Response.WriteAsJsonAsync(todos, _options);
         }
 
-        public async Task GetAsync(HttpContext context)
+        public async Task GetAsync(TodoDbContext db, HttpContext context)
         {
             if (!context.Request.RouteValues.TryGet("id", out int id))
             {
@@ -39,7 +32,7 @@ namespace Todos
                 return;
             }
 
-            var todo = await _db.Todos.FindAsync(id);
+            var todo = await db.Todos.FindAsync(id);
             if (todo == null)
             {
                 context.Response.StatusCode = 404;
@@ -49,15 +42,15 @@ namespace Todos
             await context.Response.WriteAsJsonAsync(todo, _options);
         }
 
-        public async Task PostAsync(HttpContext context)
+        public async Task PostAsync(TodoDbContext db, HttpContext context)
         {
             var todo = await context.Request.ReadFromJsonAsync<Todo>(_options);
 
-            await _db.Todos.AddAsync(todo);
-            await _db.SaveChangesAsync();
+            await db.Todos.AddAsync(todo);
+            await db.SaveChangesAsync();
         }
 
-        public async Task DeleteAsync(HttpContext context)
+        public async Task DeleteAsync(TodoDbContext db, HttpContext context)
         {
             if (!context.Request.RouteValues.TryGet("id", out int id))
             {
@@ -65,32 +58,32 @@ namespace Todos
                 return;
             }
 
-            var todo = await _db.Todos.FindAsync(id);
+            var todo = await db.Todos.FindAsync(id);
             if (todo == null)
             {
                 context.Response.StatusCode = 404;
                 return;
             }
 
-            _db.Todos.Remove(todo);
-            await _db.SaveChangesAsync();
+            db.Todos.Remove(todo);
+            await db.SaveChangesAsync();
         }
 
-        public static void MapRoutes(IEndpointRouteBuilder endpoints)
+        public void MapRoutes(IEndpointRouteBuilder endpoints)
         {
-            endpoints.MapGet("/api/todos", WithServices(api => api.GetAllAsync));
-            endpoints.MapGet("/api/todos/{id}", WithServices(api => api.GetAsync));
-            endpoints.MapPost("/api/todos", WithServices(api => api.PostAsync));
-            endpoints.MapDelete("/api/todos/{id}", WithServices(api => api.DeleteAsync));
+            endpoints.MapGet("/api/todos", WithDbContext(GetAllAsync)).RequireAuthorization();
+            endpoints.MapGet("/api/todos/{id}", WithDbContext(GetAsync)).RequireAuthorization("user");
+            endpoints.MapPost("/api/todos", WithDbContext(PostAsync)).RequireAuthorization();
+            endpoints.MapDelete("/api/todos/{id}", WithDbContext(DeleteAsync)).RequireAuthorization("admin");
         }
 
-        private static RequestDelegate WithServices(Func<TodoApi, RequestDelegate> handler)
+        private RequestDelegate WithDbContext(Func<TodoDbContext, HttpContext, Task> handler)
         {
             return context =>
             {
+                // Resolve the service from the container
                 var db = context.RequestServices.GetRequiredService<TodoDbContext>();
-                var api = new TodoApi(db);
-                return handler(api)(context);
+                return handler(db, context);
             };
         }
     }

@@ -15,59 +15,55 @@ namespace Todos
              PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public async Task GetAll(HttpContext context)
+        public async Task GetAllAsync(HttpContext context)
         {
             using var db = new TodoDbContext();
             var todos = await db.Todos.ToListAsync();
 
-            context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.Body, todos, _options);
+            await context.Response.WriteAsJsonAsync(todos, _options);
         }
 
-        public async Task Get(HttpContext context)
+        public async Task GetAsync(HttpContext context)
         {
-            var id = (string)context.Request.RouteValues["id"];
-            if (id == null || !long.TryParse(id, out var todoId))
+            if (!context.Request.RouteValues.TryGet("id", out int id))
             {
-                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                context.Response.StatusCode = 400;
                 return;
             }
 
             using var db = new TodoDbContext();
-            var todo = await db.Todos.FindAsync(todoId);
+            var todo = await db.Todos.FindAsync(id);
             if (todo == null)
             {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                context.Response.StatusCode = 404;
                 return;
             }
 
-            context.Response.ContentType = "application/json";
-            await JsonSerializer.SerializeAsync(context.Response.Body, todo, _options);
+            await context.Response.WriteAsJsonAsync(todo, _options);
         }
 
-        public async Task Post(HttpContext context)
+        public async Task PostAsync(HttpContext context)
         {
-            var todo = await JsonSerializer.DeserializeAsync<Todo>(context.Request.Body, _options);
+            var todo = await context.Request.ReadFromJsonAsync<Todo>(_options);
 
             using var db = new TodoDbContext();
-            db.Todos.Add(todo);
+            await db.Todos.AddAsync(todo);
             await db.SaveChangesAsync();
         }
 
-        public async Task Delete(HttpContext context)
+        public async Task DeleteAsync(HttpContext context)
         {
-            var id = (string)context.Request.RouteValues["id"];
-            if (id == null || !long.TryParse(id, out var todoId))
+            if (!context.Request.RouteValues.TryGet("id", out int id))
             {
-                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                context.Response.StatusCode = 400;
                 return;
             }
 
             using var db = new TodoDbContext();
-            var todo = await db.Todos.FindAsync(todoId);
+            var todo = await db.Todos.FindAsync(id);
             if (todo == null)
             {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                context.Response.StatusCode = 404;
                 return;
             }
 
@@ -77,10 +73,10 @@ namespace Todos
 
         public void MapRoutes(IEndpointRouteBuilder endpoints)
         {
-            endpoints.MapGet("/api/todos", GetAll);
-            endpoints.MapGet("/api/todos/{id}", Get);
-            endpoints.MapPost("/api/todos", Post);
-            endpoints.MapDelete("/api/todos/{id}", Delete);
+            endpoints.MapGet("/api/todos", GetAllAsync);
+            endpoints.MapGet("/api/todos/{id}", GetAsync);
+            endpoints.MapPost("/api/todos", PostAsync);
+            endpoints.MapDelete("/api/todos/{id}", DeleteAsync);
         }
     }
 }
